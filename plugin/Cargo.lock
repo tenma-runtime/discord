@@ -3672,7 +3672,7 @@ dependencies = [
 [[package]]
 name = "tenma-plugin"
 version = "0.1.0"
-source = "git+https://github.com/systonia/Tenma#28470363b94c887158eea33039c1235231a503ac"
+source = "git+https://github.com/tenma-runtime/tenma#28470363b94c887158eea33039c1235231a503ac"
 
 [[package]]
 name = "tenma_discord"

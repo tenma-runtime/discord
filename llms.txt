@@ -49,6 +49,6 @@ API at a glance:
 
 Links:
 
-- [README](https://github.com/systonia/Tenma-Discord/blob/main/README.md)
-- [Example radio bot](https://github.com/systonia/Tenma-Discord/blob/main/examples/radio.php)
-- [Tenma](https://github.com/systonia/Tenma/blob/main/llms.txt)
+- [README](https://github.com/tenma-runtime/discord/blob/main/README.md)
+- [Example radio bot](https://github.com/tenma-runtime/discord/blob/main/examples/radio.php)
+- [Tenma](https://github.com/tenma-runtime/tenma/blob/main/llms.txt)

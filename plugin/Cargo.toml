@@ -11,7 +11,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 songbird = { version = "0.6.1", default-features = false, features = ["builtin-queue", "driver", "gateway", "twilight", "rustls", "tws"] }
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4"] }
-tenma-plugin = { git = "https://github.com/systonia/Tenma", version = "0.1.0" }
+tenma-plugin = { git = "https://github.com/tenma-runtime/tenma", version = "0.1.0" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 twilight-gateway = "0.17"
 twilight-model = "0.17"

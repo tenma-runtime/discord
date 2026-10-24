@@ -4,7 +4,7 @@
 // vendor/bin/tenma-discord install: downloads the plugin of this package's version for this machine, checks its
 // SHA-256 and adds it to the project's tenma.json, so `tenma bot.php` loads it.
 
-const RELEASES = 'https://github.com/systonia/Tenma-Discord/releases/download';
+const RELEASES = 'https://github.com/tenma-runtime/discord/releases/download';
 
 if (($argv[1] ?? '') !== 'install') {
     fwrite(STDERR, "Usage: tenma-discord install\n");

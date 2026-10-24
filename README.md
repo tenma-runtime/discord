@@ -1,6 +1,6 @@
 # tenma/discord
 
-Discord bots in PHP on [Tenma](https://github.com/systonia/Tenma). A native plugin holds the gateway, REST and voice
+Discord bots in PHP on [Tenma](https://github.com/tenma-runtime/tenma). A native plugin holds the gateway, REST and voice
 connections; PHP gets the events and answers through a small API. Audio runs in the plugin, so a radio stream costs
 PHP nothing.
 
