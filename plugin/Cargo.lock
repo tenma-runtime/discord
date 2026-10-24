@@ -3676,7 +3676,7 @@ source = "git+https://github.com/tenma-runtime/tenma#28470363b94c887158eea33039c
 
 [[package]]
 name = "tenma_discord"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "futures-util",
