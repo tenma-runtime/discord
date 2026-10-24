@@ -2,6 +2,7 @@
 //! other side of `Tenma\Plugin` and `Messaging\Channel`.
 
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -9,6 +10,9 @@ use std::thread::ThreadId;
 use std::time::Duration;
 
 use futures_util::StreamExt;
+use reqwest::Url;
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
+use reqwest::redirect::{Attempt, Policy};
 use serde::Deserialize;
 use songbird::{EventContext, EventHandler, Songbird, TrackEvent};
 use songbird::input::HttpRequest;
@@ -22,6 +26,10 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 
 const API: &str = "https://discord.com/api/v10";
+/// The most tracks a guild's queue holds, so nobody fills it with endless streams.
+const QUEUE_LIMIT: usize = 50;
+/// What a refused audio URL answers, the same for every reason so it tells nothing about the network.
+const NOT_ALLOWED: &str = "url not allowed: only public http and https addresses play";
 
 static PLUGIN: Plugin = Plugin {
     name: c"discord".as_ptr(),
@@ -42,6 +50,9 @@ static STOPPING: AtomicBool = AtomicBool::new(false);
 struct Bot {
     token: String,
     http: reqwest::Client,
+    /// Fetches the audio URLs PHP passes in, which may come from any guild member: it reaches only public
+    /// addresses, also after redirects and when a name resolves differently the second time.
+    audio: reqwest::Client,
     voice: OnceLock<Arc<Songbird>>,
     gateway: OnceLock<MessageSender>,
 }
@@ -106,6 +117,7 @@ fn start(input: &[u8]) -> Result<(), String> {
             .user_agent(concat!("tenma-discord/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|error| error.to_string())?,
+        audio: audio_client().map_err(|error| error.to_string())?,
         voice: OnceLock::new(),
         gateway: OnceLock::new(),
     };
@@ -365,7 +377,13 @@ async fn enqueue(input: &[u8], replace: bool) -> Result<Vec<u8>, String> {
     let url = voice.url.ok_or("voice.play needs a url")?;
     let guild = id(&voice.guild)?;
     let call = songbird.get(guild).ok_or("not in a voice channel of this guild")?;
-    let http = BOT.get().expect("started").http.clone();
+    let http = BOT.get().expect("started").audio.clone();
+
+    // The client refuses private addresses on its own; checking here turns that into this call's error
+    // instead of a TRACK_FAILED later
+    if !public_url(&url).await {
+        return Err(NOT_ALLOWED.to_string());
+    }
 
     let input = HttpRequest::new(http, url.clone()).into();
     let track = Track::new_with_data(input, Arc::new(url));
@@ -373,6 +391,9 @@ async fn enqueue(input: &[u8], replace: bool) -> Result<Vec<u8>, String> {
     let mut call = call.lock().await;
     if replace {
         call.queue().stop();
+    }
+    if call.queue().len() >= QUEUE_LIMIT {
+        return Err(format!("the queue is full: {QUEUE_LIMIT} tracks at most"));
     }
     let handle = call.enqueue(track).await;
 
@@ -385,6 +406,129 @@ async fn enqueue(input: &[u8], replace: bool) -> Result<Vec<u8>, String> {
         let _ = handle.add_event(event.into(), announce.clone());
     }
     Ok(Vec::new())
+}
+
+/// The client for audio URLs: no proxy, since a proxy would resolve names past the check, a resolver
+/// that drops private addresses, and redirects only to URLs that pass the same check.
+fn audio_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(concat!("tenma-discord/", env!("CARGO_PKG_VERSION")))
+        .no_proxy()
+        .dns_resolver(Arc::new(PublicResolver))
+        .redirect(Policy::custom(redirect))
+        .build()
+}
+
+fn redirect(attempt: Attempt) -> reqwest::redirect::Action {
+    if attempt.previous().len() >= 10 {
+        return attempt.error("too many redirects");
+    }
+    // A redirect to an IP address skips the resolver, so allowed() looks at it here
+    if allowed(attempt.url()) {
+        attempt.follow()
+    } else {
+        attempt.error(NOT_ALLOWED)
+    }
+}
+
+/// Resolves names to their public addresses only; a name with none fails to resolve.
+struct PublicResolver;
+
+impl Resolve for PublicResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        Box::pin(async move {
+            let addresses = public_addresses(name.as_str()).await;
+            if addresses.is_empty() {
+                return Err(NOT_ALLOWED.into());
+            }
+            let addresses: Addrs = Box::new(addresses.into_iter());
+            Ok(addresses)
+        })
+    }
+}
+
+async fn public_addresses(host: &str) -> Vec<std::net::SocketAddr> {
+    // The port is a placeholder: the connector puts the URL's port in
+    let Ok(addresses) = tokio::net::lookup_host((host, 0)).await else {
+        return Vec::new();
+    };
+    addresses.filter(|address| public(address.ip())).collect()
+}
+
+/// An http or https URL whose host is a public address or a name with one.
+async fn public_url(url: &str) -> bool {
+    let Ok(url) = Url::parse(url) else {
+        return false;
+    };
+    if !allowed(&url) {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    // allowed() has checked an IP address already
+    ip_address(host).is_some() || !public_addresses(host).await.is_empty()
+}
+
+/// The scheme is http or https, and a host given as an IP address is public. Names are left to the
+/// resolver, which the connection skips for IP addresses.
+fn allowed(url: &Url) -> bool {
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    ip_address(host).is_none_or(public)
+}
+
+/// The host as an IP address, IPv6 without its brackets; None for a name.
+fn ip_address(host: &str) -> Option<IpAddr> {
+    host.trim_start_matches('[').trim_end_matches(']').parse().ok()
+}
+
+/// An address on the public internet: not loopback, private, link-local (the cloud metadata
+/// services), shared (CGNAT), unspecified, broadcast, multicast, reserved or for documentation.
+fn public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => public_v4(ip),
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
+            Some(mapped) => public_v4(mapped),
+            None => public_v6(ip),
+        },
+    }
+}
+
+fn public_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    let this_network = a == 0;
+    let shared = a == 100 && (64..128).contains(&b);
+    let protocol = a == 192 && b == 0 && c == 0;
+    let benchmark = a == 198 && (18..20).contains(&b);
+    // Multicast, reserved and broadcast: 224.0.0.0 and up
+    let above_unicast = a >= 224;
+
+    !(this_network
+        || ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || shared
+        || protocol
+        || benchmark
+        || ip.is_documentation()
+        || above_unicast)
+}
+
+/// Only global unicast (2000::/3) counts, without documentation, Teredo and 6to4, the last two
+/// because they carry an IPv4 address that may be private.
+fn public_v6(ip: Ipv6Addr) -> bool {
+    let [first, second, ..] = ip.segments();
+    let global_unicast = first & 0xe000 == 0x2000;
+    let documentation = first == 0x2001 && second == 0x0db8;
+    let teredo = first == 0x2001 && second == 0;
+    let six_to_four = first == 0x2002;
+
+    global_unicast && !documentation && !teredo && !six_to_four
 }
 
 /// Runs a function on the queue of the guild's call; nothing happens outside a voice channel.
@@ -498,4 +642,68 @@ async fn voice_leave(input: &[u8]) -> Result<Vec<u8>, String> {
     let leave = UpdateVoiceState::new(Id::<GuildMarker>::from(guild), None::<Id<ChannelMarker>>, false, false);
     gateway.command(&leave).map_err(|error| error.to_string())?;
     Ok(Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refuses_addresses_inside_the_network() {
+        let refused = [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "255.255.255.255",
+            "224.0.0.1",
+            "192.0.2.1",
+            "198.51.100.1",
+            "203.0.113.1",
+            "::",
+            "::1",
+            "fe80::1",
+            "fc00::1",
+            "fd00:ec2::254",
+            "ff02::1",
+            "2001:db8::1",
+            "::ffff:127.0.0.1",
+            "::ffff:169.254.169.254",
+            "::ffff:10.0.0.1",
+        ];
+        for ip in refused {
+            assert!(!public(ip.parse().unwrap()), "{ip} must be refused");
+        }
+    }
+
+    #[test]
+    fn allows_public_addresses() {
+        let allowed = [
+            "1.1.1.1",
+            "172.32.0.1",
+            "100.128.0.1",
+            "2606:4700::1111",
+            "::ffff:8.8.8.8",
+        ];
+        for ip in allowed {
+            assert!(public(ip.parse().unwrap()), "{ip} must be allowed");
+        }
+    }
+
+    #[test]
+    fn checks_scheme_and_literal_hosts() {
+        let allowed = |url: &str| allowed(&Url::parse(url).unwrap());
+        assert!(allowed("https://listen.moe/stream"));
+        assert!(allowed("http://1.1.1.1:8000/"));
+        assert!(!allowed("file:///etc/passwd"));
+        assert!(!allowed("ftp://example.com/song.mp3"));
+        assert!(!allowed("http://127.0.0.1:5432/"));
+        assert!(!allowed("http://2130706433/"));
+        assert!(!allowed("http://[::1]/"));
+        assert!(!allowed("http://[::ffff:a9fe:a9fe]/latest/meta-data/"));
+    }
 }

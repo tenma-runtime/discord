@@ -47,13 +47,20 @@ $bot->command(
     'radio',
     'Plays a radio station in your voice channel',
     function (Command $command) use ($join) {
+        $url = streamUrl($command->string('url') ?? STATION);
+        if ($url === null) {
+            return new Message('That is no http or https URL.', ephemeral: true);
+        }
         $voice = $join($command);
         if ($voice === null) {
             return new Message('Join a voice channel first.', ephemeral: true);
         }
 
-        $url = $command->string('url') ?? STATION;
-        $voice->play($url);
+        try {
+            $voice->play($url);
+        } catch (\RuntimeException $error) {
+            return new Message($error->getMessage(), ephemeral: true);
+        }
 
         $nowPlaying = new Embed(title: 'On air', description: $url, color: 0xE91E63);
         $buttons = [
@@ -70,12 +77,21 @@ $bot->command(
     'play',
     'Queues a song (an MP3 or Ogg URL)',
     function (Command $command) use ($join) {
+        $url = streamUrl((string) $command->string('url'));
+        if ($url === null) {
+            return new Message('That is no http or https URL.', ephemeral: true);
+        }
         $voice = $join($command);
         if ($voice === null) {
             return new Message('Join a voice channel first.', ephemeral: true);
         }
 
-        $voice->queue((string) $command->string('url'));
+        // The plugin refuses private addresses and a full queue with a RuntimeException
+        try {
+            $voice->queue($url);
+        } catch (\RuntimeException $error) {
+            return new Message($error->getMessage(), ephemeral: true);
+        }
 
         return 'Queued, ' . count($voice->tracks()) . ' in the queue';
     },
@@ -132,6 +148,16 @@ $bot->button('leave', function (Click $click) use ($bot) {
 });
 
 $bot->start();
+
+/**
+ * The URL when it is http or https, else null. The plugin also refuses private addresses on its own.
+ */
+function streamUrl(string $url): ?string
+{
+    $scheme = parse_url($url, PHP_URL_SCHEME);
+
+    return in_array($scheme, ['http', 'https'], true) ? $url : null;
+}
 
 /**
  * The stations whose name contains what the user typed.

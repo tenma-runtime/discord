@@ -44,7 +44,7 @@ API at a glance:
 - `Interactions\Command`: `name`, `option(name)`, `string(name)`, `integer(name)`; every interaction has `id`, `guildId`, `channelId`, `user`, `voiceChannel`, `reply()`, `defer()`, `followUp()`, `edit()`, `modal()`. `Click`: `buttonId`, `messageId`, `update()`. `Submit`: `modalId`, `value(id)`. `Autocomplete`: `command`, `option`, `value`; its handler returns values or names => values (25 at most).
 - `Message`, `Embed(title, description, url, color, fields, image, footer)`, `Button(id, label, style, url, disabled)` and `Button::link()`, `ButtonStyle`, `Modal(id, title, fields)`, `TextInput(id, label, paragraph, required, value, placeholder, maxLength)`.
 - `Events\`: `Ready`, `GuildCreated`, `MessageCreated` (with `reply()`), `VoiceStateUpdated`, `MemberJoined`, `TrackStarted`, `TrackEnded`, `TrackFailed`, and `Dispatch` (type and raw data) for every event.
-- `Voice`: `join(channelId)`, `play(url)` (replaces), `queue(url)`, `skip()`, `pause()`, `resume()`, `stop()` (empties the queue), `mute(bool)`, `tracks()`, `leave()`. Plays streams, MP3, Ogg and AAC over HTTP.
+- `Voice`: `join(channelId)`, `play(url)` (replaces), `queue(url)`, `skip()`, `pause()`, `resume()`, `stop()` (empties the queue), `mute(bool)`, `tracks()`, `leave()`. Plays streams, MP3, Ogg and AAC over HTTP. `play` and `queue` throw `RuntimeException` for a URL that is not http(s) on a public address (also after redirects) and `queue` once 50 tracks wait.
 - `Rest`: `request(method, path, body)` returns a `Payload` for any Discord API route; `send(channelId, message)` returns the message id.
 
 Links:

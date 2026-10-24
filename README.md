@@ -88,7 +88,9 @@ $bot->voice($guildId)->join($channelId)->play('https://listen.moe/stream');
 ```
 
 `play` replaces what plays, `queue` adds to the end; `skip`, `pause`, `resume`, `stop`, `mute`, `tracks` and `leave`.
-Streams, MP3, Ogg and AAC play. `$command->voiceChannel` is the channel the user sits in. Voice uses Discord's
+Streams, MP3, Ogg and AAC play. Only http and https URLs on public addresses play, also after redirects:
+loopback, private, link-local and similar addresses throw a `RuntimeException`, so a user's URL cannot reach the
+bot host's own network. A queue holds 50 tracks at most. `$command->voiceChannel` is the channel the user sits in. Voice uses Discord's
 end-to-end encryption.
 
 ## REST

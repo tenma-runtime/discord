@@ -22,7 +22,11 @@ final class Voice
         return $this;
     }
 
-    /** Plays a URL (a radio stream, an MP3, an Ogg file) at once, in place of what plays and what is queued. */
+    /**
+     * Plays a URL (a radio stream, an MP3, an Ogg file) at once, in place of what plays and what is queued.
+     *
+     * @throws \RuntimeException when the URL is no http or https URL on a public address
+     */
     public function play(string $url): self
     {
         $this->send('play', ['url' => $url]);
@@ -30,7 +34,12 @@ final class Voice
         return $this;
     }
 
-    /** Plays a URL after the tracks already queued, or at once if nothing plays. */
+    /**
+     * Plays a URL after the tracks already queued, or at once if nothing plays.
+     *
+     * @throws \RuntimeException when the URL is no http or https URL on a public address, or the queue
+     *     holds 50 tracks already
+     */
     public function queue(string $url): self
     {
         $this->send('queue', ['url' => $url]);
