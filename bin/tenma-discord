@@ -18,38 +18,44 @@ foreach ([$_composer_autoload_path ?? null, __DIR__ . '/../vendor/autoload.php']
     }
 }
 
-$version = ltrim(Composer\InstalledVersions::getPrettyVersion('tenma/discord') ?? '', 'v');
-if (!preg_match('/^\d+\.\d+\.\d+$/', $version)) {
-    fail("tenma/discord $version is no release. Build the plugin instead: cd plugin && cargo build --release");
-}
-
 $platform = match ([PHP_OS_FAMILY, php_uname('m')]) {
     ['Darwin', 'arm64'] => 'macos-arm64.dylib',
     ['Linux', 'x86_64'] => 'linux-x64.so',
     ['Linux', 'aarch64'], ['Linux', 'arm64'] => 'linux-arm64.so',
     default => fail('No plugin for ' . PHP_OS_FAMILY . ' ' . php_uname('m') . '. Build it: cd plugin && cargo build --release'),
 };
-$asset = "tenma-discord-$platform";
 
-echo "Downloading $asset $version\n";
-$plugin = download(RELEASES . "/v$version/$asset");
-
-// The checksums come from the same release: they catch a broken download, not a forged release
-$sums = download(RELEASES . "/v$version/SHA256SUMS");
-if (!preg_match('/^([0-9a-f]{64})\s+' . preg_quote($asset, '/') . '$/m', $sums, $match)) {
-    fail("SHA256SUMS of $version does not list $asset");
-}
-if (!hash_equals($match[1], hash('sha256', $plugin))) {
-    fail("$asset does not match its SHA-256; nothing was installed");
+$version = ltrim(Composer\InstalledVersions::getPrettyVersion('tenma/discord') ?? '', 'v');
+// One name on every platform, so a tenma.json committed on one machine loads on another: dlopen ignores the extension
+$plugin = dirname(__DIR__) . '/lib/tenma_discord.plugin';
+if (preg_match('/^\d+\.\d+\.\d+$/', $version)) {
+    installPlugin($plugin, "tenma-discord-$platform", $version);
+} elseif (!is_file($plugin)) {
+    fail("tenma/discord $version is no release. Build the plugin: cd plugin && cargo build --release, "
+        . "then copy target/release/libtenma_discord.so or .dylib to $plugin");
 }
 
-// Next to the package, so a `composer update` to another version drops the old plugin with it
-$target = dirname(__DIR__) . '/lib/libtenma_discord.' . pathinfo($asset, PATHINFO_EXTENSION);
-@mkdir(dirname($target));
-file_put_contents($target, $plugin) !== false || fail("Cannot write $target");
-echo "Installed $target\n";
+register(getcwd() . '/tenma.json', $plugin);
 
-register(getcwd() . '/tenma.json', $target);
+function installPlugin(string $target, string $asset, string $version): void
+{
+    echo "Downloading $asset $version\n";
+    $plugin = download(RELEASES . "/v$version/$asset");
+
+    // The checksums come from the same release: they catch a broken download, not a forged release
+    $sums = download(RELEASES . "/v$version/SHA256SUMS");
+    if (!preg_match('/^([0-9a-f]{64})\s+' . preg_quote($asset, '/') . '$/m', $sums, $match)) {
+        fail("SHA256SUMS of $version does not list $asset");
+    }
+    if (!hash_equals($match[1], hash('sha256', $plugin))) {
+        fail("$asset does not match its SHA-256; nothing was installed");
+    }
+
+    // Next to the package, so a `composer update` to another version drops the old plugin with it
+    @mkdir(dirname($target));
+    file_put_contents($target, $plugin) !== false || fail("Cannot write $target");
+    echo "Installed $target\n";
+}
 
 function download(string $url): string
 {
@@ -82,10 +88,16 @@ function register(string $config, string $plugin): void
     $directory = realpath(dirname($config)) . '/';
     $path = str_starts_with($plugin, $directory) ? './' . substr($plugin, strlen($directory)) : $plugin;
     $plugins = is_array($settings['plugins'] ?? null) ? $settings['plugins'] : [];
-    if (in_array($path, $plugins, true)) {
+    // Up to 0.1.2 the file was named for the platform; composer update removed it
+    $plugins = array_values(array_filter(
+        $plugins,
+        fn (mixed $entry): bool => !is_string($entry) || !preg_match('#/lib/libtenma_discord\.(so|dylib)$#', $entry),
+    ));
+    $kept = in_array($path, $plugins, true) ? $plugins : [...$plugins, $path];
+    if ($kept === ($settings['plugins'] ?? null)) {
         return;
     }
-    $settings['plugins'] = [...$plugins, $path];
+    $settings['plugins'] = $kept;
 
     file_put_contents($config, json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
     echo "Added $path to $config\n";

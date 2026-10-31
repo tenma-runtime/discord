@@ -1,7 +1,7 @@
 <?php
 
 // A radio bot: /radio plays a station in your voice channel, /play queues songs, buttons mute it or leave.
-// Run: DISCORD_TOKEN=... tenma --plugin plugin/target/release/libtenma_discord.dylib examples/radio.php
+// Run: DISCORD_TOKEN=... tenma --plugin lib/tenma_discord.plugin examples/radio.php
 
 require __DIR__ . '/../vendor/autoload.php';
 

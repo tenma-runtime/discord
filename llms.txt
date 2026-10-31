@@ -29,7 +29,8 @@ $bot->start();
 Rules:
 
 - A handler's return value is the reply: a string or a `Message`; null sends nothing. Discord waits 3 seconds: call `defer()` first for slower work, the return value then replaces the "thinking" message. After the first answer, `reply()` sends a follow-up.
-- `Message(content, embeds, buttons, ephemeral)`: on an edit (`$click->update()`, `edit()`), a null field stays as it was and `[]` clears it. Buttons go five to a row, at most 25.
+- `Message(content, embeds, buttons, ephemeral, mentions)`: on an edit (`$click->update()`, `edit()`), a null field stays as it was and `[]` clears it. Buttons go five to a row, at most 25.
+- Mentions ping nobody unless `mentions:` allows them, as Discord's `allowed_mentions`: `mentions: ['users' => [$id]]` or `mentions: ['parse' => ['users', 'roles', 'everyone']]`.
 - `button('vote', ...)` and `modal('form', ...)` also receive ids that start with `vote:` / `form:`: put data in the id (`new Button("vote:$pollId", 'Yes')`).
 - A modal opens only as the first answer: `$command->modal(...)` or `$click->modal(...)`, never after `defer()`.
 - Commands are global and sync on start, only when their definition changed; a new command may take a moment to show up in Discord.

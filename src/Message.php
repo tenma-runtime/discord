@@ -7,6 +7,10 @@ namespace Tenma\Discord;
  * what it leaves null stays as it was, and an empty list removes the embeds or buttons.
  *
  *     new Message('Now playing', embeds: [new Embed(title: 'listen.moe')], buttons: [new Button('stop', 'Stop')])
+ *
+ * Mentions in the content ping nobody, so echoed user text cannot reach @everyone. `mentions` lets them through,
+ * as Discord's allowed_mentions: `['users' => [$id]]` pings that user, `['parse' => ['users', 'roles']]` every
+ * mentioned user and role, `['parse' => ['everyone']]` also @everyone and @here.
  */
 final readonly class Message
 {
@@ -14,12 +18,19 @@ final readonly class Message
      * @param list<Embed>|null $embeds
      * @param list<Button>|null $buttons up to 25, five to a row
      * @param bool $ephemeral only the user of an interaction sees it
+     * @param array{
+     *     parse?: list<'users'|'roles'|'everyone'>,
+     *     users?: list<string>,
+     *     roles?: list<string>,
+     *     replied_user?: bool,
+     * } $mentions who the content may ping; nobody by default
      */
     public function __construct(
         public ?string $content = null,
         public ?array $embeds = null,
         public ?array $buttons = null,
         public bool $ephemeral = false,
+        public array $mentions = [],
     ) {}
 
     public static function from(string|self $message): self
@@ -41,6 +52,7 @@ final readonly class Message
         if ($this->buttons !== null) {
             $message['components'] = self::rows($this->buttons);
         }
+        $message['allowed_mentions'] = $this->mentions + ['parse' => []];
 
         return $message;
     }

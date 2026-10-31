@@ -244,8 +244,58 @@ final class BotTest extends TestCase
 
     public function testAnEditLeavesWhatTheMessageDoesNotSetAndClearsEmptyLists(): void
     {
-        $this->assertSame(['flags' => 0, 'content' => 'Muted'], new Message('Muted')->toArray());
-        $this->assertSame(['flags' => 0, 'embeds' => [], 'components' => []], new Message(embeds: [], buttons: [])->toArray());
+        $this->assertSame(
+            ['flags' => 0, 'content' => 'Muted', 'allowed_mentions' => ['parse' => []]],
+            new Message('Muted')->toArray(),
+        );
+        $this->assertSame(
+            ['flags' => 0, 'embeds' => [], 'components' => [], 'allowed_mentions' => ['parse' => []]],
+            new Message(embeds: [], buttons: [])->toArray(),
+        );
+    }
+
+    public function testEveryWayOfSendingPingsNobodyUnlessTheMessageAllowsIt(): void
+    {
+        $this->bot->command('echo', 'Echoes', function (Command $command) {
+            $command->reply('@everyone');
+            $command->followUp('<@u2>');
+            $command->edit('<@&r1>');
+            return null;
+        });
+        $this->bot->button('echo', function (Click $click) {
+            $click->update('@here');
+            return null;
+        });
+        $this->bot->on(MessageCreated::class, fn (MessageCreated $message) => $message->reply('@everyone'));
+        $this->connection->responses['POST /channels/c1/messages'] = '{"id":"m2"}';
+        $this->connection->responses['POST /channels/c2/messages'] = '{"id":"m3"}';
+        $this->connect();
+
+        $this->connection->emit('INTERACTION_CREATE', self::interaction(2, ['name' => 'echo']));
+        $this->connection->emit('INTERACTION_CREATE', self::interaction(3, ['custom_id' => 'echo']));
+        $this->connection->emit('MESSAGE_CREATE', [
+            'id' => 'm1',
+            'channel_id' => 'c1',
+            'author' => ['id' => 'u1', 'username' => 'lento'],
+            'content' => 'hello',
+        ]);
+        $this->bot->rest->send('c2', '@everyone');
+
+        $bodies = [
+            ...array_column($this->callbacks(), 'data'),
+            ...$this->connection->rest('POST', '/webhooks/app/t1'),
+            ...$this->connection->rest('PATCH', '/webhooks/app/t1/messages/@original'),
+            ...$this->connection->rest('POST', '/channels/c1/messages'),
+            ...$this->connection->rest('POST', '/channels/c2/messages'),
+        ];
+        $this->assertCount(6, $bodies);
+        foreach ($bodies as $body) {
+            $this->assertIsArray($body);
+            $this->assertSame(['parse' => []], $body['allowed_mentions'] ?? null);
+        }
+
+        $allowed = new Message('<@u2>', mentions: ['users' => ['u2']])->toArray();
+        $this->assertSame(['users' => ['u2'], 'parse' => []], $allowed['allowed_mentions']);
     }
 
     public function testTrackEventsReachTheirListeners(): void
@@ -314,6 +364,9 @@ final class BotTest extends TestCase
 
         $callbacks = $this->callbacks();
         $this->assertSame([9, 4], array_column($callbacks, 'type'));
-        $this->assertSame(['flags' => 0, 'content' => 'Thanks for https://x/radio'], $callbacks[1]['data']);
+        $this->assertSame(
+            ['flags' => 0, 'content' => 'Thanks for https://x/radio', 'allowed_mentions' => ['parse' => []]],
+            $callbacks[1]['data'],
+        );
     }
 }

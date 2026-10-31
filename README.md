@@ -27,8 +27,10 @@ vendor/bin/tenma-discord install
 DISCORD_TOKEN=... tenma bot.php
 ```
 
-`tenma-discord install` downloads the plugin of the installed version for this machine, checks its SHA-256 and adds it
-to `plugins` in the project's `tenma.json`. Run it again after `composer update`.
+`tenma-discord install` downloads the plugin of the installed version for this machine, checks its SHA-256, saves it
+as `vendor/tenma/discord/lib/tenma_discord.plugin` and adds it to `plugins` in the project's `tenma.json`. The name is
+the same on every platform, so a committed `tenma.json` works on macOS and Linux. Run it again after
+`composer update`.
 
 In the [Discord developer portal](https://discord.com/developers/applications): create an application, copy the bot's
 token, and invite the bot with the scopes `bot` and `applications.commands`. The bot needs no public URL: everything
@@ -63,6 +65,9 @@ $bot->button('vote', fn (Click $click) => new Message("{$click->user->mention()}
 - `$command->modal(new Modal('feedback', 'Feedback', [new TextInput('text', 'Your feedback', paragraph: true)]))`
   opens a form; `$bot->modal('feedback', fn (Submit $submit) => ...)` gets what was entered.
 - A handler that throws tells the user "Something went wrong." and the exception is thrown on.
+- Mentions in a message ping nobody, so a bot that echoes user text cannot reach `@everyone`. `mentions:` lets them
+  through, as Discord's `allowed_mentions`: `new Message("{$user->mention()} won", mentions: ['users' => [$user->id]])`
+  pings that user, `mentions: ['parse' => ['users', 'roles', 'everyone']]` everyone the text mentions.
 
 ## Events
 
@@ -115,8 +120,9 @@ station suggestions and a modal.
 Needs Rust and CMake (for the statically linked Opus).
 
 ```bash
-cd plugin && cargo build --release && cd ..
-DISCORD_TOKEN=... tenma --plugin plugin/target/release/libtenma_discord.dylib examples/radio.php
+cd plugin && cargo build --release && mkdir -p ../lib
+cp target/release/libtenma_discord.dylib ../lib/tenma_discord.plugin   # .so on Linux
+cd .. && DISCORD_TOKEN=... tenma --plugin lib/tenma_discord.plugin examples/radio.php
 ```
 
 ## License
